@@ -1,0 +1,30 @@
+system:
+  DPU_ACLK_MHz: null
+  PTW: 0.3
+  MO_derating: 0.3
+  MO_entries: 64
+  MO_entry_bytes: 64
+  OF_lines: 2
+  ppc_comp: 4
+  ppc_scaler: 4
+  ppc_outfifo: 2
+  vtap_scaler: 4
+  vtap_outfifo: 2
+  stream_clk_overhead: 1.13
+  ptw_group_mode: dpuf0
+
+panel:
+  panel_w: 1080
+  panel_h: 2340
+  fps: 120
+  disp_bpp: 30
+  vbp: 28
+  vfp: 28
+  vsa: 4
+  dsc_mode: 2slice_dual
+  dst_y: 0
+
+layers:
+  - {name: L1_Camera, fmt: YUV_8B, src_w: 3840, src_h: 2160, compressed: false, scaling: false, scale_v: 1.0, rotation: true,  dpuf: 0, stream_coeff: 3.0}
+  - {name: L5_UI,     fmt: RGB_4B, src_w: 1080, src_h: 2340, compressed: true,  scaling: false, scale_v: 1.0, rotation: false, dpuf: 0, stream_coeff: 2.0}
+  - {name: L9_PIP,    fmt: YUV_8B, src_w: 2560, src_h: 1440, compressed: false, scaling: false, scale_v: 1.0, rotation: true,  dpuf: 1, stream_coeff: 4.0}

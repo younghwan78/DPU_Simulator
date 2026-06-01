@@ -1,0 +1,28 @@
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.csv
+
+# Python packaging/build output
+build/
+dist/
+*.egg-info/
+*.spec
+
+# Test and coverage output
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Local editor/OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local logs and scratch files
+*.log
+*.tmp
+*.bak

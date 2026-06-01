@@ -1,0 +1,215 @@
+version: 2
+
+goal:
+  title: "DPU IB Simulator"
+  slug: "dpu-ib-simulator"
+  kind: existing_plan
+  tranche: "Implement the first complete local simulator slice from the supplied specification."
+  status: done
+  oracle:
+    signal: "uv pytest plus headless sweep CSV from examples/golden.yaml."
+    cadence: "after each Worker package and at final audit"
+    final_proof: "Passing pytest output and successful CLI sweep command."
+  intake:
+    original_request: "/goal this document as the target, review it in detail, set the goal, and implement with uv and TDD."
+    interpreted_outcome: "A runnable uv-managed single-file DPU IB simulator with tested golden calculations and a headless sweep path."
+    input_shape: existing_plan
+    audience: "local engineering user"
+    authority: requested
+    proof_type: test
+    completion_proof: "uv run pytest passes and uv run python dpu_ib_sim.py --sweep examples/golden.yaml writes a CSV."
+    likely_misfire: "Treating UI scaffolding as complete while the pure engine or F3 behavior is wrong."
+    blind_spots_considered:
+      - "DPU_ACLK_MHz is absent from the golden example, so rotation preload cannot be exact without an explicit input."
+      - "PySide6 and matplotlib should be lazy imports so engine tests remain lightweight."
+      - "The workspace is not currently a git repository, so worktree isolation is unavailable."
+      - "GoalBuddy visual board could not be started because npm/npx is unavailable in this shell."
+    existing_plan_facts:
+      - "Single-file Python desktop program named dpu_ib_sim.py."
+      - "Pure engine returns all intermediate values."
+      - "YAML load/save for config."
+      - "Headless --sweep mode writes CSV."
+      - "GUI uses PySide6 when GUI dependencies are installed."
+
+rules:
+  pm_owns_state: true
+  one_active_task: true
+  max_write_workers: 1
+  no_implementation_without_worker_or_pm_task: true
+  no_completion_without_judge_or_pm_audit: true
+  planning_is_not_completion: true
+  queued_required_worker_blocks_completion: true
+  continuous_until_full_outcome: true
+  missing_input_or_credentials_do_not_stop_goal: true
+  preserve_and_validate_existing_plan: true
+  intake_misfire_must_be_audited: true
+  goal_pressure_requires_oracle: true
+  no_completion_on_weak_proof: true
+  slice_policy:
+    max_consecutive_tiny_tasks: 2
+    prefer_vertical_slices: true
+    judge_picks_largest_safe_slice: true
+    worker_completes_whole_slice: true
+
+agents:
+  scout: unknown
+  worker: unknown
+  judge: unknown
+
+visual_board:
+  selected: local
+  local:
+    status: blocked
+    url: null
+    command: "npx goalbuddy board docs/goals/dpu-ib-simulator"
+    reason: "GoalBuddy update check reported npm ENOENT; npx is unavailable."
+
+active_task: null
+
+tasks:
+  - id: T001
+    type: scout
+    assignee: Scout
+    status: done
+    reasoning_hint: default
+    objective: "Read the supplied implementation spec and map workspace/project constraints."
+    inputs:
+      - "C:/Users/user/Downloads/DPU_IB_implementation.md"
+      - "E:/55_Codex_DPU_IB_simulator"
+    constraints:
+      - "Read-only."
+    expected_output:
+      - "Spec constraints"
+      - "Workspace constraints"
+      - "Verification commands"
+    receipt:
+      result: done
+      summary: "Spec requires a single dpu_ib_sim.py with pure engine, YAML, PySide6 GUI, matplotlib sweep, and pytest golden regression. Workspace was empty and not a git repo; uv is available."
+      evidence:
+        - "C:/Users/user/Downloads/DPU_IB_implementation.md"
+        - "uv --version -> uv 0.11.2"
+        - "git status -> not a git repository"
+  - id: T002
+    type: judge
+    assignee: Judge
+    status: done
+    reasoning_hint: default
+    objective: "Choose the first safe implementation task from the spec."
+    inputs:
+      - "T001 receipt"
+    constraints:
+      - "Do not implement."
+      - "Respect TDD and the F3 DPU_ACLK ambiguity."
+    expected_output:
+      - "Decision"
+      - "Exact Worker objective"
+      - "allowed_files"
+      - "verify"
+      - "stop_if"
+    receipt:
+      result: done
+      decision: "approved"
+      full_outcome_complete: false
+      rationale: "The largest safe first slice is project scaffolding, golden tests, pure engine, CLI sweep, and lazy GUI path. Rotation preload must be N/A when DPU_ACLK_MHz is absent."
+      worker_objective: "Create uv project files and implement dpu_ib_sim.py using TDD until golden tests and CLI sweep pass."
+      allowed_files:
+        - ".gitignore"
+        - "pyproject.toml"
+        - "uv.lock"
+        - "dpu_ib_sim.py"
+        - "examples/golden.yaml"
+        - "tests/test_engine_golden.py"
+        - "docs/goals/dpu-ib-simulator/goal.md"
+        - "docs/goals/dpu-ib-simulator/state.yaml"
+      verify:
+        - "uv run pytest"
+        - "uv run python dpu_ib_sim.py --sweep examples/golden.yaml --out sweep.csv"
+      stop_if:
+        - "The supplied formula cannot reproduce the accepted outfifo or streaming golden values."
+        - "uv cannot create or run the virtual environment."
+        - "Implementation requires hidden silicon constants not present in the spec."
+  - id: T003
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Create uv project files and implement dpu_ib_sim.py using TDD until golden tests and CLI sweep pass."
+    allowed_files:
+      - ".gitignore"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "dpu_ib_sim.py"
+      - "examples/golden.yaml"
+      - "tests/test_engine_golden.py"
+      - "docs/goals/dpu-ib-simulator/goal.md"
+      - "docs/goals/dpu-ib-simulator/state.yaml"
+    verify:
+      - "uv run pytest"
+      - "uv run python dpu_ib_sim.py --sweep examples/golden.yaml --out sweep.csv"
+    stop_if:
+      - "The supplied formula cannot reproduce the accepted outfifo or streaming golden values."
+      - "uv cannot create or run the virtual environment."
+      - "Implementation requires hidden silicon constants not present in the spec."
+    receipt:
+      result: done
+      changed_files:
+        - ".gitignore"
+        - "pyproject.toml"
+        - "uv.lock"
+        - "dpu_ib_sim.py"
+        - "examples/golden.yaml"
+        - "tests/test_engine_golden.py"
+        - "docs/goals/dpu-ib-simulator/goal.md"
+        - "docs/goals/dpu-ib-simulator/state.yaml"
+      commands:
+        - cmd: "uv run pytest"
+          status: pass
+          evidence: "4 passed in 0.14s"
+        - cmd: "uv run python dpu_ib_sim.py --sweep examples/golden.yaml --param panel.fps --start 120 --stop 120 --step 1 --out %TEMP%/dpu_ib_sweep_final.csv"
+          status: pass
+          evidence: "CSV row: 120,3735.5845959183675,IB_outfifo_preload,,3735.5845959183675,3598.227359999999"
+        - cmd: "uv run --extra gui python -c \"from PySide6.QtWidgets import QApplication; import matplotlib; print('gui deps import ok')\""
+          status: pass
+          evidence: "gui deps import ok"
+      summary: "Implemented the uv project, single-file simulator engine/CLI/lazy GUI path, golden YAML, and pytest coverage. F3 DPU_ACLK_MHz stays explicit: rotation preload is N/A when absent, while outfifo/streaming/final binding reproduce the golden oracle."
+  - id: T999
+    type: judge
+    assignee: Judge
+    status: done
+    reasoning_hint: default
+    objective: "Audit whether the implemented simulator slice satisfies the original user outcome."
+    inputs:
+      - "All done task receipts"
+      - "Last verification"
+      - "Current file tree"
+    constraints:
+      - "Do not implement."
+      - "Reject completion if pytest or CLI sweep verification is missing."
+      - "Reject completion if F3 is hidden by a magic default."
+    expected_output:
+      - "complete | not_complete"
+      - "full_outcome_complete: true | false"
+      - "missing evidence"
+      - "next task if not complete"
+    receipt:
+      result: done
+      decision: "complete"
+      full_outcome_complete: true
+      summary: "The requested first implementation tranche is complete: tested golden engine values, headless sweep CSV, lazy PySide6/matplotlib GUI path, uv lockfile, and GoalBuddy charter/state are present."
+      evidence:
+        - "uv run pytest -> 4 passed"
+        - "headless sweep at fps=120 -> DPU_IB 3735.5845959183675 MB/s, binding IB_outfifo_preload"
+        - "GUI extra dependency import check -> gui deps import ok"
+      residual_risk:
+        - "Full interactive GUI behavior was not manually clicked through in a visible desktop session."
+        - "Rotation preload remains intentionally underdetermined until a real DPU_ACLK_MHz is supplied."
+
+checks:
+  dirty_fingerprint: unknown
+  last_verification:
+    result: pass
+    task: T003
+    commands:
+      - "uv run pytest"
+      - "uv run python dpu_ib_sim.py --sweep examples/golden.yaml --param panel.fps --start 120 --stop 120 --step 1 --out %TEMP%/dpu_ib_sweep_final.csv"
+      - "uv run --extra gui python -c \"from PySide6.QtWidgets import QApplication; import matplotlib; print('gui deps import ok')\""
