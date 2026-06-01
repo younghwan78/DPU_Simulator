@@ -55,8 +55,6 @@ when `--extra gui` is requested.
 From PowerShell:
 
 ```powershell
-git clone https://github.com/younghwan78/DPU_Simulator.git
-cd DPU_Simulator
 uv run pytest
 ```
 
