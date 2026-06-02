@@ -21,7 +21,9 @@ from the GUI so the golden regression can run quickly in CI or a local shell.
   - grouped/color-coded breakdown table with units
   - formula tab with MathJax-rendered formulae and live-value tables
   - 1D and 2D sweep plotting
-- Provides a headless CLI sweep mode that writes CSV output.
+- Provides headless CLI modes for:
+  - actual-case batch CSV import/export
+  - 1D and 2D sweep CSV output
 - Uses a uv-managed Python environment and pytest golden regression tests.
 
 ## Project Layout
@@ -32,7 +34,9 @@ from the GUI so the golden regression can run quickly in CI or a local shell.
 |-- pyproject.toml                 # uv/project metadata
 |-- uv.lock                        # resolved dependency lockfile
 |-- examples/
-|   `-- golden.yaml                # spec golden example config
+|   |-- golden.yaml                # spec golden example config
+|   |-- batch_cases.csv            # sample batch input
+|   `-- batch_result.csv           # sample batch output
 |-- tests/
 |   `-- test_engine_golden.py      # golden engine, CLI, and GUI-structure tests
 `-- docs/goals/dpu-ib-simulator/   # GoalBuddy charter/state for this build
@@ -117,6 +121,76 @@ layers[0].src_h
 layers[0].scale_v
 layers[0].stream_coeff
 ```
+
+## Headless Batch
+
+Use batch mode when each CSV batch column is a real case to calculate. The
+command reads a base YAML config, applies non-empty batch cells as overrides,
+calculates each batch independently, and writes a result CSV. Batch input and
+output use the same UI-like matrix shape: `section/group/name/note` on the Y
+axis and batch numbers on the X axis.
+
+```powershell
+uv run python dpu_ib_sim.py --batch examples/batch_cases.csv `
+  --base examples/golden.yaml `
+  --out examples/batch_result.csv
+```
+
+Input shape:
+
+```csv
+section,group,name,note,batch_1,batch_2,batch_3
+input,meta,case_id,,golden_120,system_layer_variant,fps_144_rotation
+input,meta,description,,Baseline golden case,System and layer override case,144 Hz with layer overrides
+input,panel,panel.panel_w,px,1080,1440,1080
+input,panel,panel.fps,Hz,120,120,144
+input,system,system.PTW,ratio,0.3,0.45,0.3
+input,system,system.max_bus_port_BW_MBs,MB/s,5500,9000,5500
+input,layers[0],layers[0].fmt,,YUV_8B,RGB_4B,YUV_8B
+input,layers[0],layers[0].rotation,,True,False,True
+input,layers[1],layers[1].hdr,,False,True,False
+```
+
+Output shape:
+
+```csv
+section,group,name,note,batch_1,batch_2,batch_3
+input,meta,case_id,,golden_120,system_layer_variant,fps_144_rotation
+summary,term,DPU_IB_MBps,MB/s,3735.5845959183675,5273.690111999998,4317.872831999999
+summary,term,binding_term,,IB_outfifo_preload,IB_streaming,IB_streaming
+summary,status,status,,ok,ok,ok
+breakdown,timing,T_line_ns,ns,3472.22,3170.98,2893.52
+breakdown,shared,MO_buf_bytes,B,8192,6144,8192
+breakdown,clock,DPU_ACLK_MHz,MHz; F6/F7; binding,245.54,375.00,245.54
+breakdown,term,IB_streaming_MBps,MB/s,3598.23,5273.69,4317.87
+```
+
+Sample files:
+
+```text
+examples/batch_cases.csv
+examples/batch_result.csv
+```
+
+Input rules:
+
+- Each batch column is one case.
+- Only rows with `section=input` are used as batch inputs. The output preserves
+  those input rows, then appends `summary` and `breakdown` sections.
+- Metadata names such as `case_id` and `description` are preserved as input rows.
+- Override names use the same parameter path syntax as sweep. Supported
+  groups include `panel.*`, `system.*`, and existing base-config layer indices
+  such as `layers[0].src_w`, `layers[1].fmt`, and `layers[2].rotation`.
+- Empty cells are ignored, so the base YAML value is kept. For optional
+  resolution fields this means the existing `panel default` fallback still
+  applies.
+- Layer rows override the existing layers from the base YAML. To compare cases
+  with different layer settings, put the maximum layer set in the base YAML and
+  override the fields needed per batch column.
+- Invalid batch columns do not stop the batch. The batch column is written with
+  `status=error` and an `error` message, then the next row continues.
+- Output `breakdown` rows follow the same model values as the GUI Breakdown tab:
+  timing, shared, streaming, clock, rotation, per-layer rows, and final term rows.
 
 ## GUI Usage
 

@@ -789,6 +789,183 @@ def sweep(
     return rows
 
 
+BATCH_RESULT_COLUMNS = [
+    "DPU_IB_MBps",
+    "binding_term",
+    "IB_rotation_preload_MBps",
+    "IB_outfifo_preload_MBps",
+    "IB_streaming_MBps",
+    "DPU_ACLK_MHz",
+    "aclk_binding",
+    "status",
+    "error",
+]
+
+
+@dataclass
+class BatchInput:
+    columns: list[str]
+    rows: list[dict[str, str | None]]
+    items: list[dict[str, str]]
+
+
+class BatchRows(list[dict[str, Any]]):
+    def __init__(
+        self,
+        rows: list[dict[str, Any]],
+        input_items: list[dict[str, str]],
+        breakdowns: list[list[dict[str, Any]] | None],
+    ) -> None:
+        super().__init__(rows)
+        self.input_items = input_items
+        self.breakdowns = breakdowns
+
+
+def batch_calculate(base_config: SimulatorConfig, csv_path: str | Path) -> list[dict[str, Any]]:
+    with Path(csv_path).open(newline="", encoding="utf-8-sig") as fp:
+        reader = csv.DictReader(fp)
+        if reader.fieldnames is None:
+            return []
+        fieldnames = list(reader.fieldnames)
+        raw_rows = list(reader)
+    batch_input = _normalize_batch_input(fieldnames, raw_rows)
+    rows: list[dict[str, Any]] = []
+    breakdowns: list[list[dict[str, Any]] | None] = []
+    for row in batch_input.rows:
+        batch_row, batch_breakdown = _batch_row(base_config, batch_input.columns, row)
+        rows.append(batch_row)
+        breakdowns.append(batch_breakdown)
+    return BatchRows(rows, batch_input.items, breakdowns)
+
+
+def _normalize_batch_input(
+    fieldnames: list[str],
+    raw_rows: list[dict[str, str | None]],
+) -> BatchInput:
+    if _is_ui_matrix_batch_input(fieldnames):
+        return _ui_matrix_batch_input(fieldnames, raw_rows)
+    if _is_item_matrix_batch_input(fieldnames):
+        return _transpose_batch_input(fieldnames, raw_rows)
+    return BatchInput(fieldnames, raw_rows, [_input_item_for_name(column) for column in fieldnames])
+
+
+def _is_ui_matrix_batch_input(fieldnames: list[str]) -> bool:
+    return len(fieldnames) >= 3 and fieldnames[:3] == ["section", "group", "name"]
+
+
+def _is_item_matrix_batch_input(fieldnames: list[str]) -> bool:
+    return bool(fieldnames) and fieldnames[0] == "item"
+
+
+def _ui_matrix_batch_input(
+    fieldnames: list[str],
+    raw_rows: list[dict[str, str | None]],
+) -> BatchInput:
+    try:
+        batch_start = fieldnames.index("note") + 1
+    except ValueError:
+        batch_start = fieldnames.index("name") + 1
+    batch_columns = fieldnames[batch_start:]
+    input_rows = [
+        row
+        for row in raw_rows
+        if str(row.get("section", "") or "").strip() == "input" and str(row.get("name", "") or "").strip()
+    ]
+    input_items = [
+        {
+            "section": "input",
+            "group": str(row.get("group", "") or "").strip(),
+            "name": str(row.get("name", "") or "").strip(),
+            "note": str(row.get("note", "") or "").strip(),
+        }
+        for row in input_rows
+    ]
+    input_columns = [item["name"] for item in input_items]
+    case_rows: list[dict[str, str | None]] = []
+    for batch_column in batch_columns:
+        case: dict[str, str | None] = {}
+        for row, item in zip(input_rows, input_items):
+            case[item["name"]] = row.get(batch_column, "")
+        case_rows.append(case)
+    return BatchInput(input_columns, case_rows, input_items)
+
+
+def _transpose_batch_input(
+    fieldnames: list[str],
+    raw_rows: list[dict[str, str | None]],
+) -> BatchInput:
+    batch_columns = fieldnames[1:]
+    input_columns = [str(row.get("item", "") or "").strip() for row in raw_rows]
+    input_columns = [column for column in input_columns if column]
+    input_items = [_input_item_for_name(column) for column in input_columns]
+    case_rows: list[dict[str, str | None]] = []
+    for batch_column in batch_columns:
+        case: dict[str, str | None] = {}
+        for row in raw_rows:
+            item = str(row.get("item", "") or "").strip()
+            if item:
+                case[item] = row.get(batch_column, "")
+        case_rows.append(case)
+    return BatchInput(input_columns, case_rows, input_items)
+
+
+def _input_item_for_name(name: str) -> dict[str, str]:
+    group = "meta"
+    layer_match = _LAYER_PATH.match(name)
+    if name.startswith("panel."):
+        group = "panel"
+    elif name.startswith("system."):
+        group = "system"
+    elif layer_match:
+        group = f"layers[{layer_match.group(1)}]"
+    return {"section": "input", "group": group, "name": name, "note": ""}
+
+
+def _batch_row(
+    base_config: SimulatorConfig,
+    input_columns: list[str],
+    input_row: dict[str, str | None],
+) -> tuple[dict[str, Any], list[dict[str, Any]] | None]:
+    output: dict[str, Any] = {column: input_row.get(column, "") or "" for column in input_columns}
+    scenario = copy.deepcopy(base_config)
+    try:
+        for column in input_columns:
+            value = input_row.get(column)
+            if not _is_batch_override_column(column) or value is None or value.strip() == "":
+                continue
+            set_path(scenario, column, value.strip())
+        result = solve(scenario)
+        output.update(_batch_result_values(result))
+        return output, breakdown_rows(result)
+    except Exception as exc:
+        output.update({column: "" for column in BATCH_RESULT_COLUMNS})
+        output["status"] = "error"
+        output["error"] = str(exc)
+        return output, None
+
+
+def _is_batch_override_column(column: str) -> bool:
+    return column.startswith(("panel.", "system.")) or _LAYER_PATH.match(column) is not None
+
+
+def _batch_result_values(result: Result) -> dict[str, Any]:
+    return {
+        "DPU_IB_MBps": result.dpu_ib_MBps,
+        "binding_term": result.binding_term or "",
+        "IB_rotation_preload_MBps": _blank_none(result.terms["IB_rotation_preload_MBps"]),
+        "IB_outfifo_preload_MBps": _blank_none(result.terms["IB_outfifo_preload_MBps"]),
+        "IB_streaming_MBps": _blank_none(result.terms["IB_streaming_MBps"]),
+        "DPU_ACLK_MHz": result.clock["DPU_ACLK_MHz"],
+        "aclk_binding": result.clock["aclk_binding"],
+        "status": "ok",
+        "error": "",
+    }
+
+
+def _blank_none(value: Any) -> Any:
+    return "" if value is None else value
+
+
 def _inclusive_range(start: float, stop: float, step: float) -> list[float]:
     if step == 0:
         raise ValueError("step must not be zero")
@@ -830,7 +1007,7 @@ def get_path(config: SimulatorConfig, path: str) -> Any:
 
 def set_path(config: SimulatorConfig, path: str, value: Any) -> Any:
     current = get_path(config, path)
-    coerced = _coerce_like(current, value)
+    coerced = _coerce_for_path(path, current, value)
     layer_match = _LAYER_PATH.match(path)
     if layer_match:
         index = int(layer_match.group(1))
@@ -841,6 +1018,22 @@ def set_path(config: SimulatorConfig, path: str, value: Any) -> Any:
     target = config.panel if section == "panel" else config.system
     setattr(target, field_name, coerced)
     return coerced
+
+
+OPTIONAL_INT_PATHS = {
+    "system.dpuf_xres",
+    "system.dpuf_yres",
+    "system.dpu_xres",
+    "system.dpu_yres",
+}
+OPTIONAL_INT_LAYER_FIELDS = {"dst_w", "dst_h"}
+
+
+def _coerce_for_path(path: str, current: Any, value: Any) -> Any:
+    layer_match = _LAYER_PATH.match(path)
+    if path in OPTIONAL_INT_PATHS or (layer_match and layer_match.group(2) in OPTIONAL_INT_LAYER_FIELDS):
+        return _optional_int(value)
+    return _coerce_like(current, value)
 
 
 def _coerce_like(current: Any, value: Any) -> Any:
@@ -1180,11 +1373,100 @@ def write_sweep_csv(rows: list[dict[str, Any]], path: str | Path) -> None:
         writer.writerows(rows)
 
 
+def write_batch_csv(rows: list[dict[str, Any]], path: str | Path) -> None:
+    write_sweep_csv(_ui_batch_matrix_rows(rows), path)
+
+
+def _ui_batch_matrix_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        raise ValueError("no batch rows to write")
+    matrix: list[dict[str, Any]] = []
+    input_items = getattr(rows, "input_items", None) or _fallback_input_items(rows)
+    for item in input_items:
+        matrix.append(_batch_matrix_row(item["section"], item["group"], item["name"], item["note"], rows, item["name"]))
+    matrix.extend(_batch_summary_rows(rows))
+    matrix.extend(_batch_breakdown_matrix_rows(rows))
+    return matrix
+
+
+def _fallback_input_items(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
+    result_columns = set(BATCH_RESULT_COLUMNS)
+    return [_input_item_for_name(column) for column in rows[0] if column not in result_columns]
+
+
+def _batch_matrix_row(
+    section: str,
+    group: str,
+    name: str,
+    note: str,
+    rows: list[dict[str, Any]],
+    source_key: str,
+) -> dict[str, Any]:
+    row = _empty_batch_matrix_row(section, group, name, note, len(rows))
+    for index, source in enumerate(rows, start=1):
+        row[f"batch_{index}"] = source.get(source_key, "")
+    return row
+
+
+def _empty_batch_matrix_row(section: str, group: str, name: str, note: str, batch_count: int) -> dict[str, Any]:
+    row: dict[str, Any] = {"section": section, "group": group, "name": name, "note": note}
+    for index in range(1, batch_count + 1):
+        row[f"batch_{index}"] = ""
+    return row
+
+
+def _batch_summary_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        _batch_matrix_row("summary", "term", "DPU_IB_MBps", "MB/s", rows, "DPU_IB_MBps"),
+        _batch_matrix_row("summary", "term", "binding_term", "", rows, "binding_term"),
+        _batch_matrix_row("summary", "status", "status", "", rows, "status"),
+        _batch_matrix_row("summary", "status", "error", "", rows, "error"),
+    ]
+
+
+def _batch_breakdown_matrix_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    breakdowns: list[list[dict[str, Any]] | None] = getattr(rows, "breakdowns", [None for _ in rows])
+    ordered_keys: list[tuple[str, str]] = []
+    row_meta: dict[tuple[str, str], dict[str, Any]] = {}
+    for breakdown in breakdowns:
+        if not breakdown:
+            continue
+        for breakdown_row in breakdown:
+            key = (str(breakdown_row["group"]), str(breakdown_row["name"]))
+            if key not in row_meta:
+                ordered_keys.append(key)
+                row_meta[key] = breakdown_row
+
+    matrix_rows: list[dict[str, Any]] = []
+    for key in ordered_keys:
+        meta = row_meta[key]
+        row = _empty_batch_matrix_row("breakdown", str(meta["group"]), str(meta["name"]), str(meta["note"]), len(rows))
+        for index, breakdown in enumerate(breakdowns, start=1):
+            source_row = _find_breakdown_row(breakdown, key)
+            row[f"batch_{index}"] = source_row.get("model", "") if source_row else ""
+        matrix_rows.append(row)
+    return matrix_rows
+
+
+def _find_breakdown_row(
+    breakdown: list[dict[str, Any]] | None,
+    key: tuple[str, str],
+) -> dict[str, Any] | None:
+    if not breakdown:
+        return None
+    for row in breakdown:
+        if (str(row["group"]), str(row["name"])) == key:
+            return row
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="DPU IB simulator")
     parser.add_argument("--gui", action="store_true", help="launch the PySide6 GUI (default when --sweep is not used)")
     parser.add_argument("--config", help="YAML config to open in GUI")
     parser.add_argument("--sweep", metavar="CFG", help="run a headless sweep from a YAML config")
+    parser.add_argument("--batch", metavar="CSV", help="run headless batch cases from a CSV file")
+    parser.add_argument("--base", metavar="CFG", help="base YAML config for --batch; defaults to the built-in golden config")
     parser.add_argument("--param", default="panel.fps", help="1D sweep parameter path")
     parser.add_argument("--start", type=float, default=60.0)
     parser.add_argument("--stop", type=float, default=144.0)
@@ -1193,8 +1475,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--start2", type=float)
     parser.add_argument("--stop2", type=float)
     parser.add_argument("--step2", type=float)
-    parser.add_argument("--out", default="sweep.csv", help="CSV output path for --sweep")
+    parser.add_argument("--out", default="sweep.csv", help="CSV output path for --sweep or --batch")
     args = parser.parse_args(argv)
+
+    if args.batch:
+        cfg = load_config(args.base) if args.base else default_golden_config()
+        rows = batch_calculate(cfg, args.batch)
+        write_batch_csv(rows, args.out)
+        print(f"wrote {len(rows)} batch rows to {args.out}")
+        return 0
 
     if args.sweep:
         cfg = load_config(args.sweep)

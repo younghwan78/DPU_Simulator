@@ -104,6 +104,189 @@ def test_2d_sweep_varies_parameter_pair_and_keeps_baseline_unchanged():
     assert all("binding_term" in row for row in rows)
 
 
+def test_batch_calculate_applies_csv_overrides_and_skips_blank_cells(tmp_path):
+    csv_path = tmp_path / "cases.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "case_id,panel.fps,system.dpuf_xres,system.dpuf_yres,system.dpu_xres,system.dpu_yres,layers[0].src_w",
+                "baseline,120,,,,,",
+                "small-dpuf,144,640,480,640,480,1920",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    base = default_golden_config()
+
+    rows = dpu_ib_sim.batch_calculate(base, csv_path)
+
+    assert len(rows) == 2
+    assert rows[0]["case_id"] == "baseline"
+    assert rows[0]["status"] == "ok"
+    assert rows[0]["panel.fps"] == "120"
+    assert rows[0]["system.dpuf_xres"] == ""
+    assert rows[0]["DPU_IB_MBps"] == pytest.approx(3735.5846, abs=0.001)
+    assert rows[0]["DPU_ACLK_MHz"] == pytest.approx(245.5357, abs=0.001)
+    assert rows[0]["binding_term"] == "IB_outfifo_preload"
+    assert rows[0]["error"] == ""
+    assert rows[1]["case_id"] == "small-dpuf"
+    assert rows[1]["status"] == "ok"
+    assert rows[1]["panel.fps"] == "144"
+    assert rows[1]["layers[0].src_w"] == "1920"
+    assert rows[1]["DPU_IB_MBps"] != pytest.approx(rows[0]["DPU_IB_MBps"], abs=0.001)
+    assert base.layers[0].src_w == 3840
+
+
+def test_batch_calculate_accepts_transposed_input_layout(tmp_path):
+    csv_path = tmp_path / "cases.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "section,group,name,note,batch_1,batch_2",
+                "input,meta,case_id,,baseline,fps_144",
+                "input,meta,description,,Golden baseline,High refresh",
+                "input,panel,panel.fps,,120,144",
+                "input,system,system.dpuf_xres,panel default,,640",
+                "input,system,system.dpuf_yres,panel default,,480",
+                "input,system,system.dpu_xres,panel default,,640",
+                "input,system,system.dpu_yres,panel default,,480",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    rows = dpu_ib_sim.batch_calculate(default_golden_config(), csv_path)
+
+    assert len(rows) == 2
+    assert rows[0]["case_id"] == "baseline"
+    assert rows[0]["description"] == "Golden baseline"
+    assert rows[0]["panel.fps"] == "120"
+    assert rows[0]["system.dpuf_xres"] == ""
+    assert rows[0]["status"] == "ok"
+    assert rows[0]["DPU_IB_MBps"] == pytest.approx(3735.5846, abs=0.001)
+    assert rows[1]["case_id"] == "fps_144"
+    assert rows[1]["description"] == "High refresh"
+    assert rows[1]["panel.fps"] == "144"
+    assert rows[1]["system.dpuf_xres"] == "640"
+    assert rows[1]["binding_term"] == "IB_rotation_preload"
+
+
+def test_batch_calculate_varies_system_and_layer_configuration_per_batch(tmp_path):
+    csv_path = tmp_path / "cases.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "section,group,name,note,batch_1,batch_2",
+                "input,meta,case_id,,golden,layer_system_variant",
+                "input,panel,panel.fps,,120,120",
+                "input,system,system.PTW,,0.3,0.45",
+                "input,system,system.MO_entries,,64,96",
+                "input,system,system.max_bus_port_BW_MBs,MB/s,5500,9000",
+                "input,system,system.ai_scaler_enabled,,False,True",
+                "input,system,system.wb_enabled,,False,True",
+                "input,system,system.wb_xres,px,0,1920",
+                "input,system,system.wb_yres,px,0,1080",
+                "input,layers[0],layers[0].name,,L1_Camera,L1_Camera_1080p",
+                "input,layers[0],layers[0].fmt,,YUV_8B,RGB_4B",
+                "input,layers[0],layers[0].src_w,px,3840,1920",
+                "input,layers[0],layers[0].src_h,px,2160,1080",
+                "input,layers[0],layers[0].compressed,,False,True",
+                "input,layers[0],layers[0].scaling,,False,True",
+                "input,layers[0],layers[0].scale_v,,1.0,1.5",
+                "input,layers[0],layers[0].rotation,,True,False",
+                "input,layers[0],layers[0].dpuf,,0,1",
+                "input,layers[0],layers[0].stream_coeff,,3.0,1.5",
+                "input,layers[1],layers[1].name,,L5_UI,L5_UI_HDR",
+                "input,layers[1],layers[1].fmt,,RGB_4B,RGB_8B_FP16",
+                "input,layers[1],layers[1].src_w,px,1080,1440",
+                "input,layers[1],layers[1].src_h,px,2340,2560",
+                "input,layers[1],layers[1].hdr,,False,True",
+                "input,layers[1],layers[1].stream_coeff,,2.0,2.5",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    rows = dpu_ib_sim.batch_calculate(default_golden_config(), csv_path)
+
+    assert [row["case_id"] for row in rows] == ["golden", "layer_system_variant"]
+    assert rows[0]["status"] == "ok"
+    assert rows[1]["status"] == "ok"
+    assert rows[1]["system.PTW"] == "0.45"
+    assert rows[1]["system.max_bus_port_BW_MBs"] == "9000"
+    assert rows[1]["system.ai_scaler_enabled"] == "True"
+    assert rows[1]["system.wb_enabled"] == "True"
+    assert rows[1]["layers[0].name"] == "L1_Camera_1080p"
+    assert rows[1]["layers[0].fmt"] == "RGB_4B"
+    assert rows[1]["layers[0].rotation"] == "False"
+    assert rows[1]["layers[1].hdr"] == "True"
+    assert rows[1]["DPU_IB_MBps"] != pytest.approx(rows[0]["DPU_IB_MBps"], abs=0.001)
+    assert rows[1]["DPU_ACLK_MHz"] != pytest.approx(rows[0]["DPU_ACLK_MHz"], abs=0.001)
+
+
+def test_batch_calculate_marks_row_errors_and_continues(tmp_path):
+    csv_path = tmp_path / "cases.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "case_id,panel.fps,panel.dsc_mode",
+                "bad,120,unknown_mode",
+                "good,120,2slice_dual",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    rows = dpu_ib_sim.batch_calculate(default_golden_config(), csv_path)
+
+    assert [row["case_id"] for row in rows] == ["bad", "good"]
+    assert rows[0]["status"] == "error"
+    assert "unknown dsc_mode" in rows[0]["error"]
+    assert rows[0]["DPU_IB_MBps"] == ""
+    assert rows[1]["status"] == "ok"
+    assert rows[1]["error"] == ""
+    assert rows[1]["DPU_IB_MBps"] == pytest.approx(3735.5846, abs=0.001)
+
+
+def test_write_batch_csv_matches_ui_breakdown_layout(tmp_path):
+    in_path = tmp_path / "cases.csv"
+    in_path.write_text(
+        "\n".join(
+            [
+                "section,group,name,note,batch_1,batch_2",
+                "input,meta,case_id,,baseline,fps_144",
+                "input,panel,panel.fps,,120,144",
+                "input,system,system.PTW,,0.3,0.3",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    rows = dpu_ib_sim.batch_calculate(default_golden_config(), in_path)
+    out_path = tmp_path / "batch_result.csv"
+
+    dpu_ib_sim.write_batch_csv(rows, out_path)
+
+    with out_path.open(newline="", encoding="utf-8") as fp:
+        csv_rows = list(csv.DictReader(fp))
+    assert csv_rows[0] == {
+        "section": "input",
+        "group": "meta",
+        "name": "case_id",
+        "note": "",
+        "batch_1": "baseline",
+        "batch_2": "fps_144",
+    }
+    by_row = {(row["section"], row["group"], row["name"]): row for row in csv_rows}
+    assert by_row[("summary", "term", "DPU_IB_MBps")]["note"] == "MB/s"
+    assert float(by_row[("summary", "term", "DPU_IB_MBps")]["batch_1"]) == pytest.approx(3735.58, abs=0.01)
+    assert by_row[("summary", "term", "binding_term")]["batch_1"] == "IB_outfifo_preload"
+    assert by_row[("summary", "status", "status")]["batch_2"] == "ok"
+    assert by_row[("breakdown", "timing", "T_line_ns")]["note"] == "ns"
+    assert by_row[("breakdown", "shared", "MO_buf_bytes")]["note"] == "B"
+    assert by_row[("breakdown", "clock", "DPU_ACLK_MHz")]["note"] == "MHz; F6/F7; binding"
+    assert by_row[("breakdown", "term", "IB_streaming_MBps")]["note"] == "MB/s"
+
+
 def test_yaml_loader_and_cli_sweep_write_csv(tmp_path):
     cfg = load_config(Path("examples/golden.yaml"))
     assert cfg.panel.panel_w == 1080
@@ -137,6 +320,59 @@ def test_yaml_loader_and_cli_sweep_write_csv(tmp_path):
         rows = list(csv.DictReader(fp))
     assert len(rows) == 1
     assert rows[0]["binding_term"] == "IB_outfifo_preload"
+
+
+def test_cli_batch_writes_transposed_csv_from_imported_cases(tmp_path):
+    in_path = tmp_path / "cases.csv"
+    in_path.write_text(
+        "\n".join(
+            [
+                "section,group,name,note,batch_1,batch_2",
+                "input,meta,case_id,,baseline,small-dpuf",
+                "input,panel,panel.fps,,120,120",
+                "input,system,system.dpuf_xres,panel default,,640",
+                "input,system,system.dpuf_yres,panel default,,480",
+                "input,system,system.dpu_xres,panel default,,640",
+                "input,system,system.dpu_yres,panel default,,480",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    out_path = tmp_path / "batch_result.csv"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "dpu_ib_sim.py",
+            "--batch",
+            str(in_path),
+            "--base",
+            "examples/golden.yaml",
+            "--out",
+            str(out_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "wrote 2 batch rows" in completed.stdout
+    with out_path.open(newline="", encoding="utf-8") as fp:
+        rows = list(csv.DictReader(fp))
+    matrix = {(row["section"], row["group"], row["name"]): row for row in rows}
+    assert rows[0] == {
+        "section": "input",
+        "group": "meta",
+        "name": "case_id",
+        "note": "",
+        "batch_1": "baseline",
+        "batch_2": "small-dpuf",
+    }
+    assert matrix[("summary", "status", "status")]["batch_1"] == "ok"
+    assert matrix[("summary", "term", "binding_term")]["batch_1"] == "IB_outfifo_preload"
+    assert matrix[("breakdown", "clock", "DPU_ACLK_MHz")]["batch_2"] == matrix[
+        ("breakdown", "clock", "DPU_ACLK_MHz")
+    ]["batch_1"]
 
 
 def test_breakdown_rows_include_group_colors_and_units_in_notes():

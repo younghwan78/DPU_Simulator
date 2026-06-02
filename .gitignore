@@ -3,6 +3,7 @@
 __pycache__/
 *.py[cod]
 *.csv
+!examples/*.csv
 
 # Python packaging/build output
 build/

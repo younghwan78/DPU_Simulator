@@ -1,0 +1,81 @@
+section,group,name,note,batch_1,batch_2,batch_3
+input,meta,case_id,,golden_120,system_layer_variant,fps_144_rotation
+input,meta,description,,Baseline golden case,System and layer override case,144 Hz with layer overrides
+input,panel,panel.panel_w,px,1080,1440,1080
+input,panel,panel.panel_h,px,2340,2560,2340
+input,panel,panel.fps,Hz,120,120,144
+input,panel,panel.disp_bpp,bpp,30,30,30
+input,panel,panel.vbp,lines,28,32,28
+input,panel,panel.vfp,lines,28,32,28
+input,panel,panel.vsa,lines,4,4,4
+input,panel,panel.dsc_mode,,2slice_dual,2slice_dual,2slice_dual
+input,panel,panel.dst_y,lines,0,0,0
+input,system,system.PTW,ratio,0.3,0.45,0.3
+input,system,system.MO_derating,ratio,0.3,0.25,0.3
+input,system,system.MO_entries,count,64,96,64
+input,system,system.MO_entry_bytes,B,64,64,64
+input,system,system.OF_lines,lines,2,3,2
+input,system,system.margin,ratio,1.13,1.2,1.13
+input,system,system.bus_width_B,B,32,32,32
+input,system,system.bus_util,ratio,0.7,0.75,0.7
+input,system,system.max_bus_port_BW_MBs,MB/s,5500,9000,5500
+input,system,system.ppc_comp,px/clk,4,4,4
+input,system,system.ppc_scaler,px/clk,4,4,4
+input,system,system.ppc_outfifo,px/clk,2,2,2
+input,system,system.ppc_pbld,px/clk,2,2,2
+input,system,system.ppc_ai_scaler,px/clk,2,2,2
+input,system,system.ppc_wb,px/clk,2,2,2
+input,system,system.vtap_scaler,taps,4,4,4
+input,system,system.vtap_outfifo,taps,2,2,2
+input,system,system.stream_clk_overhead,ratio,1.13,1.13,1.13
+input,system,system.ptw_group_mode,,dpuf0,rotation_layers,dpuf0
+input,system,system.ai_scaler_enabled,,False,True,False
+input,system,system.wb_enabled,,False,True,False
+input,system,system.dpuf_xres,px; blank uses panel default,,1440,
+input,system,system.dpuf_yres,px; blank uses panel default,,2560,
+input,system,system.dpu_xres,px; blank uses panel default,,1440,
+input,system,system.dpu_yres,px; blank uses panel default,,2560,
+input,system,system.wb_xres,px,0,1920,0
+input,system,system.wb_yres,px,0,1080,0
+input,layers[0],layers[0].name,,L1_Camera,L1_Camera_1080p,L1_Camera
+input,layers[0],layers[0].fmt,,YUV_8B,RGB_4B,YUV_8B
+input,layers[0],layers[0].src_w,px,3840,1920,3840
+input,layers[0],layers[0].src_h,px,2160,1080,2160
+input,layers[0],layers[0].dst_w,px; blank uses source default,,1440,
+input,layers[0],layers[0].dst_h,px; blank uses source default,,810,
+input,layers[0],layers[0].compressed,,False,True,False
+input,layers[0],layers[0].compression_mode,,sajc,sajc,sajc
+input,layers[0],layers[0].hdr,,False,False,False
+input,layers[0],layers[0].scaling,,False,True,False
+input,layers[0],layers[0].scale_v,ratio,1.0,1.5,1.0
+input,layers[0],layers[0].rotation,,True,False,True
+input,layers[0],layers[0].dpuf,,0,1,0
+input,layers[0],layers[0].stream_coeff,,3.0,1.5,3.0
+input,layers[1],layers[1].name,,L5_UI,L5_UI_HDR,L5_UI
+input,layers[1],layers[1].fmt,,RGB_4B,RGB_8B_FP16,RGB_4B
+input,layers[1],layers[1].src_w,px,1080,1440,1080
+input,layers[1],layers[1].src_h,px,2340,2560,2340
+input,layers[1],layers[1].dst_w,px; blank uses source default,,1440,
+input,layers[1],layers[1].dst_h,px; blank uses source default,,2560,
+input,layers[1],layers[1].compressed,,True,True,True
+input,layers[1],layers[1].compression_mode,,sajc,sajc,sajc
+input,layers[1],layers[1].hdr,,False,True,False
+input,layers[1],layers[1].scaling,,False,False,False
+input,layers[1],layers[1].scale_v,ratio,1.0,1.0,1.0
+input,layers[1],layers[1].rotation,,False,False,False
+input,layers[1],layers[1].dpuf,,0,1,0
+input,layers[1],layers[1].stream_coeff,,2.0,2.5,2.0
+input,layers[2],layers[2].name,,L9_PIP,L9_PIP,L9_PIP_720p
+input,layers[2],layers[2].fmt,,YUV_8B,YUV_8B,YUV_8B
+input,layers[2],layers[2].src_w,px,2560,2560,1280
+input,layers[2],layers[2].src_h,px,1440,1440,720
+input,layers[2],layers[2].dst_w,px; blank uses source default,,,
+input,layers[2],layers[2].dst_h,px; blank uses source default,,,
+input,layers[2],layers[2].compressed,,False,False,False
+input,layers[2],layers[2].compression_mode,,sajc,sajc,sajc
+input,layers[2],layers[2].hdr,,False,False,False
+input,layers[2],layers[2].scaling,,False,False,True
+input,layers[2],layers[2].scale_v,ratio,1.0,1.0,2.0
+input,layers[2],layers[2].rotation,,True,True,True
+input,layers[2],layers[2].dpuf,,1,1,1
+input,layers[2],layers[2].stream_coeff,,4.0,4.0,2.0
