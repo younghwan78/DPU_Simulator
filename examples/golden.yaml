@@ -1,17 +1,32 @@
 system:
-  DPU_ACLK_MHz: null
   PTW: 0.3
   MO_derating: 0.3
   MO_entries: 64
   MO_entry_bytes: 64
   OF_lines: 2
+  margin: 1.13
+  bus_width_B: 32
+  bus_util: 0.70
+  max_bus_port_BW_MBs: 5500
   ppc_comp: 4
   ppc_scaler: 4
   ppc_outfifo: 2
+  ppc_pbld: 2
+  ppc_ai_scaler: 2
+  ppc_wb: 2
   vtap_scaler: 4
   vtap_outfifo: 2
   stream_clk_overhead: 1.13
   ptw_group_mode: dpuf0
+  ai_scaler_enabled: false
+  wb_enabled: false
+  dpuf_xres: null
+  dpuf_yres: null
+  dpu_xres: null
+  dpu_yres: null
+  wb_xres: 0
+  wb_yres: 0
+  overlay_count_overrides: {}
 
 panel:
   panel_w: 1080

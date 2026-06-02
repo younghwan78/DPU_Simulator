@@ -144,19 +144,34 @@ Config files are YAML with three top-level sections:
 
 ```yaml
 system:
-  DPU_ACLK_MHz: null
   PTW: 0.3
   MO_derating: 0.3
   MO_entries: 64
   MO_entry_bytes: 64
   OF_lines: 2
+  margin: 1.13
+  bus_width_B: 32
+  bus_util: 0.70
+  max_bus_port_BW_MBs: 5500
   ppc_comp: 4
   ppc_scaler: 4
   ppc_outfifo: 2
+  ppc_pbld: 2
+  ppc_ai_scaler: 2
+  ppc_wb: 2
   vtap_scaler: 4
   vtap_outfifo: 2
   stream_clk_overhead: 1.13
   ptw_group_mode: dpuf0
+  ai_scaler_enabled: false
+  wb_enabled: false
+  dpuf_xres: null
+  dpuf_yres: null
+  dpu_xres: null
+  dpu_yres: null
+  wb_xres: 0
+  wb_yres: 0
+  overlay_count_overrides: {}
 
 panel:
   panel_w: 1080
@@ -174,13 +189,21 @@ layers:
     fmt: YUV_8B
     src_w: 3840
     src_h: 2160
+    dst_w: null
+    dst_h: null
     compressed: false
+    compression_mode: sajc
+    hdr: false
     scaling: false
     scale_v: 1.0
     rotation: true
     dpuf: 0
     stream_coeff: 3.0
 ```
+
+When `dpuf_xres/dpuf_yres` or `dpu_xres/dpu_yres` are `null`, the simulator uses
+`panel_w/panel_h` as the effective resolution. The Breakdown and Formula tabs
+show this as `panel default` so the assumption is visible.
 
 See `examples/golden.yaml` for the complete golden input.
 
@@ -193,6 +216,12 @@ Units:
 - time: ns
 - bandwidth: MB/s
 
+Clock selection:
+
+```text
+DPU_ACLK = max(ACLK1, ACLK2, ACLK3, ACLK4, ACLK5, ACLK6)
+```
+
 Final selection:
 
 ```text
@@ -204,11 +233,13 @@ Important flagged assumptions from the source specification:
 - `F1`: streaming uses a single effective per-layer `stream_coeff`.
 - `F2`: PTW group mode is configurable; default is `dpuf0` to match the golden
   example.
-- `F3`: `DPU_ACLK_MHz` is required for `IB_rotation_preload`. If it is missing,
-  rotation preload is shown as `N/A` while outfifo/streaming still compute.
 - `F4`: `YUV_10B` bpp is modeled as 15 until packing is confirmed.
 - `F5`: rotation preload reuses outfifo `rot_init_data`; the source document
   notes a small unresolved mismatch.
+- `F6`: `max_bus_port_BW_MBs` defaults to 5500 MB/s until the real silicon value
+  is confirmed.
+- `F7`: overlay counts are auto-derived per DPUF unless
+  `overlay_count_overrides` is provided.
 
 ## Verification
 
@@ -221,10 +252,10 @@ uv run pytest
 Current verified coverage includes:
 
 - golden timing/intermediate values
+- golden computed `DPU_ACLK` ACLK1..6 and binding row
 - golden outfifo preload
 - golden streaming
-- F3 no-hidden-default behavior for rotation preload
-- configured `DPU_ACLK_MHz` rotation calculation path
+- computed-clock rotation preload path
 - 1D and 2D sweep behavior
 - YAML loader and CLI CSV output
 - key GUI structure checks for sidebar, result card, table formatting, formula

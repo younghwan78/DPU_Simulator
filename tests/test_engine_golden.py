@@ -8,7 +8,16 @@ import pytest
 import inspect
 
 import dpu_ib_sim
-from dpu_ib_sim import breakdown_rows, default_golden_config, load_config, solve, sweep, term_summary_rows
+from dpu_ib_sim import (
+    breakdown_rows,
+    default_golden_config,
+    dpu_aclk,
+    load_config,
+    result_delta_summary,
+    solve,
+    sweep,
+    term_summary_rows,
+)
 
 
 def test_golden_outfifo_streaming_and_binding_match_spec():
@@ -35,28 +44,35 @@ def test_golden_outfifo_streaming_and_binding_match_spec():
     assert result.streaming["PTW_MBps"] == pytest.approx(514.03, abs=0.01)
     assert result.terms["IB_streaming_MBps"] == pytest.approx(3598.23, abs=0.5)
 
-    assert result.terms["IB_rotation_preload_MBps"] is None
-    assert "F3" in result.flags
+    assert result.terms["IB_rotation_preload_MBps"] == pytest.approx(3698.0, abs=25.0)
+    assert "F3" not in result.flags
+    assert "F6" in result.flags
+    assert "F7" in result.flags
     assert result.dpu_ib_MBps == pytest.approx(3735.58, abs=0.5)
     assert result.binding_term == "IB_outfifo_preload"
 
 
-def test_rotation_preload_uses_configured_aclk_without_hidden_default():
+def test_dpu_aclk_golden_breakdown_and_binding():
     cfg = default_golden_config()
-    cfg.system.DPU_ACLK_MHz = 600.0
 
+    clock = dpu_aclk(cfg)
     result = solve(cfg)
 
-    expected_latency_ns = (4680 + 1350 + 540 + 1080) * 1000 / 600.0
-    expected_tx_allow_ns = 194444.44444444444 - expected_latency_ns
-    expected_rot_data = 296228.5714285714 + 197485.7142857143
-    expected_rotation = expected_rot_data / expected_tx_allow_ns * 1000 * 1.3
-
-    assert result.rotation["pipeline_latency_cycles"] == pytest.approx(7650)
-    assert result.rotation["tx_allow_time_ns"] == pytest.approx(expected_tx_allow_ns, abs=0.01)
-    assert result.terms["IB_rotation_preload_MBps"] == pytest.approx(expected_rotation, abs=0.01)
-    assert "F3" not in result.flags
-    assert "F5" in result.flags
+    assert clock["ACLK1_MHz"] == pytest.approx(85.7, abs=0.2)
+    assert clock["ACLK2_MHz"] == pytest.approx(88.8, abs=0.5)
+    assert clock["ACLK3_MHz"] == pytest.approx(245.5, abs=1.0)
+    assert clock["ACLK4_MHz"] == pytest.approx(171.3, abs=0.5)
+    assert clock["ACLK5_MHz"] == 0
+    assert clock["ACLK6_MHz"] == 0
+    assert clock["DPU_ACLK_MHz"] == pytest.approx(245.5, abs=1.0)
+    assert clock["aclk_binding"] == "ACLK3"
+    assert result.clock["DPU_ACLK_MHz"] == pytest.approx(clock["DPU_ACLK_MHz"], abs=0.01)
+    assert clock["resolution_source"]["dpuf"] == "panel default"
+    assert clock["resolution_source"]["dpu"] == "panel default"
+    assert result.rotation["pipeline_latency_cycles"] == pytest.approx(5130)
+    assert result.rotation["pipeline_latency_lines"] == pytest.approx(6.0, abs=0.1)
+    assert result.rotation["tx_allow_lines"] == pytest.approx(50.0, abs=0.2)
+    assert result.terms["IB_rotation_preload_MBps"] is not None
 
 
 def test_sweep_varies_only_selected_parameter_and_keeps_baseline_unchanged():
@@ -129,8 +145,11 @@ def test_breakdown_rows_include_group_colors_and_units_in_notes():
     rows = breakdown_rows(result)
 
     assert rows
-    assert {row["group"] for row in rows} >= {"timing", "shared", "streaming", "rotation", "term"}
+    assert {row["group"] for row in rows} >= {"timing", "shared", "streaming", "clock", "rotation", "term"}
     assert all(row["background"] for row in rows)
+    assert next(row for row in rows if row["name"] == "DPU_ACLK_MHz")["group"] == "clock"
+    assert "panel default" in next(row for row in rows if row["name"] == "dpuf_resolution_source")["note"]
+    assert "panel default" in next(row for row in rows if row["name"] == "dpu_resolution_source")["note"]
     assert next(row for row in rows if row["name"] == "T_line_ns")["note"] == "ns"
     assert next(row for row in rows if row["name"] == "MO_buf_bytes")["note"] == "B"
     assert "MB/s" in next(row for row in rows if row["name"] == "IB_outfifo_preload_MBps")["note"]
@@ -182,7 +201,66 @@ def test_formula_live_values_render_as_table_rows():
     assert "<td>B</td>" in html
     assert "<td>IB_outfifo_preload</td>" in html
     assert "<td>3735.58</td>" in html
+    assert "<td>DPU_ACLK</td>" in html
+    assert "<td>245.54</td>" in html
     assert "MO_buf_bytes=8192, Total_pipeline_data_bytes" not in html
+
+
+def test_gui_system_panel_uses_computed_aclk_fields():
+    source = inspect.getsource(dpu_ib_sim.run_gui)
+
+    assert '"DPU_ACLK_MHz",' not in source
+    assert '"max_bus_port_BW_MBs"' in source
+    assert '"bus_width_B"' in source
+    assert '"dpuf_xres"' in source
+
+
+def test_gui_optional_fields_show_fallback_placeholder_and_tooltip():
+    source = inspect.getsource(dpu_ib_sim.run_gui)
+
+    assert "setPlaceholderText(\"panel default\")" in source
+    assert "setToolTip(\"Blank uses panel_w/panel_h fallback\")" in source
+    assert "auto default" in source
+
+
+def test_result_delta_summary_shows_unchanged_final_with_changed_clock_terms():
+    previous = solve(default_golden_config())
+    cfg = default_golden_config()
+    cfg.system.dpuf_xres = 640
+    cfg.system.dpuf_yres = 480
+    cfg.system.dpu_xres = 640
+    cfg.system.dpu_yres = 480
+    current = solve(cfg)
+
+    summary = result_delta_summary(current, previous)
+    rows = breakdown_rows(current, previous)
+    terms = term_summary_rows(current, previous)
+
+    assert summary["dpu_ib_delta"] == pytest.approx(0)
+    assert summary["dpu_aclk_delta"] == pytest.approx(0)
+    assert summary["binding_changed"] is False
+    assert {"ACLK1", "ACLK4"} <= set(summary["changed_clock_terms"])
+    assert summary["headline"] == "DPU_IB unchanged; DPU_ACLK unchanged; changed clock terms: ACLK1, ACLK4"
+    assert next(row for row in rows if row["name"] == "ACLK1_MHz")["delta"].startswith("-75.26")
+    assert next(row for row in rows if row["name"] == "DPU_ACLK_MHz")["delta"] == "0.00"
+    assert next(term for term in terms if term["key"] == "IB_outfifo_preload")["delta_display"] == "0.00"
+
+
+def test_gui_summary_and_breakdown_include_baseline_delta_fields():
+    source = inspect.getsource(dpu_ib_sim.run_gui)
+
+    assert "self.baseline_result" in source
+    assert "self.delta_label" in source
+    assert "Set baseline" in source
+    assert "self.set_baseline" in source
+    assert "[\"group\", \"name\", \"model\", \"delta\", \"measured\", \"note\"]" in source
+
+
+def test_gui_bolds_nonzero_delta_cells_only():
+    source = inspect.getsource(dpu_ib_sim.run_gui)
+
+    assert "item.setFont(delta_font)" in source
+    assert "text not in {\"\", \"0.00\", \"same\"}" in source
 
 
 def test_gui_exposes_optional_2d_sweep_controls_and_heatmap():
